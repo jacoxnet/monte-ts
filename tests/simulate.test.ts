@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { simulate } from '../src/lib/sim/simulate';
+import { compare, lognormalParams, simulate } from '../src/lib/sim/simulate';
 import type { SimParams } from '../src/lib/sim/types';
 
 const base: SimParams = {
@@ -82,5 +82,84 @@ describe('simulate (stochastic)', () => {
     let last = 0;
     simulate({ ...params, runs: 1000 }, (f) => (last = f));
     expect(last).toBe(1);
+  });
+});
+
+describe('lognormal model', () => {
+  const params: SimParams = {
+    initialWealth: 1_000_000,
+    meanReturn: 0.07,
+    volatility: 0.15,
+    inflation: 0.03,
+    withdrawalRate: 0,
+    years: 1,
+    runs: 200_000,
+    seed: 7,
+  };
+
+  it('compounds at the mean return when sigma = 0', () => {
+    const r = simulate({ ...base, meanReturn: 0.05, withdrawalRate: 0, years: 10 }, undefined, 'lognormal');
+    expect(r.nominal.min).toBeCloseTo(1_000_000 * Math.pow(1.05, 10), 4);
+    expect(r.geometricMean).toBeCloseTo(0.05, 12);
+  });
+
+  it('matches the arithmetic mean and volatility, and derives the geometric mean', () => {
+    const { mu, sigma, geometricMean } = lognormalParams(0.07, 0.15);
+    const mean = Math.exp(mu + sigma ** 2 / 2);
+    const stdev = mean * Math.sqrt(Math.exp(sigma ** 2) - 1);
+    expect(mean).toBeCloseTo(1.07, 12);
+    expect(stdev).toBeCloseTo(0.15, 12);
+    expect(geometricMean).toBeCloseTo(0.0596, 3);
+
+    const r = simulate(params, undefined, 'lognormal');
+    expect(r.nominal.median / 1_000_000).toBeCloseTo(1 + geometricMean, 2);
+    expect(r.nominal.mean / 1_000_000).toBeCloseTo(1.07, 2);
+  });
+
+  it('never loses more than everything', () => {
+    const r = simulate({ ...params, volatility: 1 }, undefined, 'lognormal');
+    expect(r.nominal.min).toBeGreaterThan(0);
+  });
+});
+
+describe('compare', () => {
+  const params: SimParams = {
+    initialWealth: 1_000_000,
+    meanReturn: 0.07,
+    volatility: 0.15,
+    inflation: 0.03,
+    withdrawalRate: 0.04,
+    years: 30,
+    runs: 5_000,
+    seed: 11,
+  };
+
+  it('leaves the normal model unchanged', () => {
+    const c = compare(params);
+    const alone = simulate(params);
+    expect(c.normal.successRate).toBe(alone.successRate);
+    expect(c.normal.nominal).toEqual(alone.nominal);
+  });
+
+  it('labels each model and reports its means', () => {
+    const { normal, lognormal } = compare(params);
+    expect(normal.model).toBe('normal');
+    expect(normal.arithmeticMean).toBe(0.07);
+    expect(normal.geometricMean).toBeCloseTo(0.05875, 10);
+    expect(lognormal.model).toBe('lognormal');
+    expect(lognormal.arithmeticMean).toBe(0.07);
+    expect(lognormal.geometricMean).toBeCloseTo(0.0596, 3);
+  });
+
+  it('gives similar success rates when only the distribution shape differs', () => {
+    const { normal, lognormal } = compare({ ...params, runs: 100_000 });
+    expect(Math.abs(lognormal.successRate - normal.successRate)).toBeLessThan(0.02);
+  });
+
+  it('reports monotonic progress up to 1', () => {
+    const seen: number[] = [];
+    compare({ ...params, runs: 1000 }, (f) => seen.push(f));
+    expect(seen.at(-1)).toBe(1);
+    expect(seen).toEqual([...seen].sort((a, b) => a - b));
   });
 });

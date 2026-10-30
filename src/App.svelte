@@ -2,14 +2,14 @@
   import InputForm from './lib/components/InputForm.svelte';
   import Results from './lib/components/Results.svelte';
   import { DEFAULTS, loadInputs, saveInputs, toParams, validate, type FormValues } from './lib/inputs';
-  import type { SimResult, WorkerRequest, WorkerResponse } from './lib/sim/types';
+  import type { Comparison, WorkerRequest, WorkerResponse } from './lib/sim/types';
 
   let values: FormValues = $state(loadInputs());
   const errors = $derived(validate(values));
 
   let running = $state(false);
   let progress = $state(0);
-  let result: SimResult | null = $state(null);
+  let result: Comparison | null = $state(null);
   let error: string | null = $state(null);
   let worker: Worker | null = null;
 
@@ -67,8 +67,9 @@
   <header>
     <h1>Monte Carlo Retirement Simulator</h1>
     <p>
-      Each run draws normally distributed annual returns and withdraws an inflation-adjusted amount
-      at the start of each year. A run succeeds if the money lasts through every withdrawal.
+      Compares normal and lognormal annual returns with the same arithmetic mean and volatility.
+      Each run withdraws an inflation-adjusted amount at the start of each year and succeeds if the
+      money lasts through every withdrawal.
     </p>
   </header>
 
@@ -89,7 +90,7 @@
       {/if}
       {#if result}
         <div class:stale={running}>
-          <Results {result} />
+          <Results comparison={result} />
         </div>
       {:else if !running}
         <p class="empty">Enter your assumptions and run the simulation.</p>
@@ -99,8 +100,10 @@
 
   <footer>
     <p>
-      Notes: returns are nominal and drawn independently each year from a normal distribution,
-      clamped at −100%. The mean is arithmetic; compound growth is roughly mean − σ²/2. Ending
+      Notes: returns are nominal and drawn independently each year. The mean is arithmetic and
+      volatility is the standard deviation of annual returns in both models, which start from the
+      same seed. Normal returns are clamped at −100%, and their compound growth is roughly
+      mean − σ²/2. The lognormal geometric mean is derived from the mean and volatility. Ending
       wealth counts failed runs as $0. Today's dollars divide by (1 + inflation)<sup>years</sup>.
     </p>
   </footer>
