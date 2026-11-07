@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { FieldErrors, FormValues } from '../inputs';
+  import type { FieldErrors, FormValues, NumericField, WithdrawalChoice } from '../inputs';
 
   interface Props {
     values: FormValues;
@@ -13,7 +13,7 @@
   let { values = $bindable(), errors, running, onrun, oncancel, onreset }: Props = $props();
 
   type Field = {
-    key: keyof FormValues;
+    key: NumericField;
     label: string;
     prefix?: string;
     suffix?: string;
@@ -27,11 +27,22 @@
     { key: 'meanReturnPct', label: 'Mean annual return', suffix: '%', step: '0.1', hint: 'Arithmetic mean, nominal' },
     { key: 'volatilityPct', label: 'Volatility (std. dev.)', suffix: '%', step: '0.1' },
     { key: 'inflationPct', label: 'Inflation rate', suffix: '%', step: '0.1' },
-    { key: 'withdrawalRatePct', label: 'Withdrawal rate', suffix: '%', step: '0.1', hint: 'Of initial wealth, then raised with inflation' },
+    { key: 'withdrawalRatePct', label: 'Custom withdrawal rate', suffix: '%', step: '0.1', hint: 'Of initial wealth, then raised with inflation' },
     { key: 'years', label: 'Retirement years', step: '1' },
     { key: 'runs', label: 'Simulation runs', step: '1000' },
     { key: 'seed', label: 'Random seed', step: '1', hint: 'Optional; set for reproducible results', placeholder: 'random' },
   ];
+
+  const choices: { value: WithdrawalChoice; label: string; hint: string }[] = [
+    { value: 'standard', label: 'Standard', hint: '4% of initial wealth, then raised with inflation' },
+    {
+      value: 'guardrails',
+      label: 'Guardrails',
+      hint: 'Guyton-Klinger: starts at 5.5%, raised with inflation; cut or raised 10% when the rate drifts 20% from 5.5%',
+    },
+    { value: 'custom', label: 'Custom', hint: 'Your rate, then raised with inflation' },
+  ];
+  const choiceHint = $derived(choices.find((c) => c.value === values.withdrawalChoice)?.hint);
 
   const hasErrors = $derived(Object.keys(errors).length > 0);
 
@@ -41,29 +52,53 @@
   }
 </script>
 
+{#snippet numberField(f: Field)}
+  <label class="field" class:invalid={errors[f.key]}>
+    <span class="label">{f.label}</span>
+    <span class="input-wrap">
+      {#if f.prefix}<span class="affix">{f.prefix}</span>{/if}
+      <input
+        type="number"
+        inputmode="decimal"
+        step={f.step}
+        placeholder={f.placeholder}
+        disabled={running}
+        bind:value={values[f.key]}
+        aria-invalid={!!errors[f.key]}
+      />
+      {#if f.suffix}<span class="affix">{f.suffix}</span>{/if}
+    </span>
+    {#if errors[f.key]}
+      <span class="msg error">{errors[f.key]}</span>
+    {:else if f.hint}
+      <span class="msg">{f.hint}</span>
+    {/if}
+  </label>
+{/snippet}
+
 <form onsubmit={submit} novalidate>
   {#each fields as f (f.key)}
-    <label class="field" class:invalid={errors[f.key]}>
-      <span class="label">{f.label}</span>
-      <span class="input-wrap">
-        {#if f.prefix}<span class="affix">{f.prefix}</span>{/if}
-        <input
-          type="number"
-          inputmode="decimal"
-          step={f.step}
-          placeholder={f.placeholder}
-          disabled={running}
-          bind:value={values[f.key]}
-          aria-invalid={!!errors[f.key]}
-        />
-        {#if f.suffix}<span class="affix">{f.suffix}</span>{/if}
-      </span>
-      {#if errors[f.key]}
-        <span class="msg error">{errors[f.key]}</span>
-      {:else if f.hint}
-        <span class="msg">{f.hint}</span>
+    {#if f.key === 'withdrawalRatePct'}
+      <fieldset class="field" disabled={running}>
+        <legend class="label">Withdrawal strategy</legend>
+        <div class="segmented">
+          {#each choices as c (c.value)}
+            <label class:selected={values.withdrawalChoice === c.value}>
+              <input type="radio" name="withdrawalChoice" value={c.value} bind:group={values.withdrawalChoice} />
+              {c.label}
+            </label>
+          {/each}
+        </div>
+        {#if values.withdrawalChoice !== 'custom'}
+          <span class="msg">{choiceHint}</span>
+        {/if}
+      </fieldset>
+      {#if values.withdrawalChoice === 'custom'}
+        {@render numberField(f)}
       {/if}
-    </label>
+    {:else}
+      {@render numberField(f)}
+    {/if}
   {/each}
 
   <div class="actions">
@@ -88,6 +123,51 @@
   .label {
     font-size: 0.875rem;
     font-weight: 600;
+  }
+  fieldset {
+    border: 0;
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+  }
+  legend {
+    padding: 0;
+    margin-bottom: 4px;
+  }
+  .segmented {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--input-bg);
+    padding: 3px;
+    gap: 3px;
+  }
+  .segmented label {
+    position: relative;
+    text-align: center;
+    padding: 6px 4px;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    cursor: pointer;
+    color: var(--muted);
+  }
+  .segmented label.selected {
+    background: var(--accent);
+    color: var(--on-accent);
+    font-weight: 600;
+  }
+  .segmented label:has(input:focus-visible) {
+    box-shadow: 0 0 0 3px var(--accent-ring);
+  }
+  .segmented input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+  fieldset:disabled .segmented label {
+    cursor: not-allowed;
+    opacity: 0.6;
   }
   .input-wrap {
     display: flex;

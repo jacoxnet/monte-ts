@@ -16,6 +16,28 @@ describe('inputs', () => {
     expect(p).toMatchObject({ meanReturn: 0.07, volatility: 0.15, inflation: 0.03, withdrawalRate: 0.04, seed: 99 });
   });
 
+  it('maps withdrawal choices to strategy and rate', () => {
+    expect(toParams({ ...DEFAULTS, withdrawalChoice: 'standard', withdrawalRatePct: 7 })).toMatchObject({
+      withdrawalStrategy: 'constant',
+      withdrawalRate: 0.04,
+    });
+    expect(toParams({ ...DEFAULTS, withdrawalChoice: 'guardrails' })).toMatchObject({
+      withdrawalStrategy: 'guardrails',
+      withdrawalRate: 0.055,
+    });
+    expect(toParams({ ...DEFAULTS, withdrawalChoice: 'custom', withdrawalRatePct: 4.5 })).toMatchObject({
+      withdrawalStrategy: 'constant',
+      withdrawalRate: 0.045,
+    });
+  });
+
+  it('only validates the custom rate when custom is chosen', () => {
+    expect(validate({ ...DEFAULTS, withdrawalChoice: 'standard', withdrawalRatePct: null })).toEqual({});
+    expect(Object.keys(validate({ ...DEFAULTS, withdrawalChoice: 'custom', withdrawalRatePct: null }))).toEqual([
+      'withdrawalRatePct',
+    ]);
+  });
+
   it('picks a random seed when blank', () => {
     const p = toParams(DEFAULTS);
     expect(Number.isInteger(p.seed)).toBe(true);

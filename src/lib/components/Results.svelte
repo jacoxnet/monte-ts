@@ -18,6 +18,14 @@
   ];
 
   const failures = $derived(result.params.runs - result.successes);
+  const gk = $derived(result.guardrails);
+  const firstWithdrawal = $derived(result.params.withdrawalRate * result.params.initialWealth);
+  const strategyLabel = $derived(
+    result.params.withdrawalStrategy === 'guardrails'
+      ? `Guyton-Klinger guardrails, ${formatPercent(result.params.withdrawalRate)} start`
+      : `${formatPercent(result.params.withdrawalRate)} constant, inflation-adjusted`,
+  );
+  const vsFirst = (v: number) => formatPercent(v / firstWithdrawal - 1, 0).replace(/^(?!-)/, '+');
 </script>
 
 <section class="results">
@@ -49,6 +57,62 @@
     </tbody>
   </table>
 
+  {#if gk}
+    <h2>Withdrawals under the guardrails</h2>
+    <p class="note">
+      Today's dollars, compared with the {formatCurrency(firstWithdrawal)} first-year withdrawal. Failed runs
+      count as $0.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th scope="col"></th>
+          <th scope="col">Final year</th>
+          <th scope="col">Lowest year</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each rows as row (row.key)}
+          <tr>
+            <th scope="row">{row.label}</th>
+            <td>
+              {formatCurrency(gk.finalWithdrawal[row.key])}
+              <span class="delta">{vsFirst(gk.finalWithdrawal[row.key])}</span>
+            </td>
+            <td>
+              {formatCurrency(gk.lowestWithdrawal[row.key])}
+              <span class="delta">{vsFirst(gk.lowestWithdrawal[row.key])}</span>
+            </td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+
+    <dl class="meta">
+      {#if gk.finalRate}
+        <div>
+          <dt>Final-year withdrawal rate (median of successful runs)</dt>
+          <dd>
+            {formatPercent(gk.finalRate.median)}
+            <span class="delta">range {formatPercent(gk.finalRate.min)} – {formatPercent(gk.finalRate.max)}</span>
+          </dd>
+        </div>
+      {/if}
+      <div>
+        <dt>10% cuts (capital preservation)</dt>
+        <dd>{gk.avgCuts.toFixed(1)} per run; {formatPercent(gk.runsWithCut, 0)} of runs had one</dd>
+      </div>
+      <div>
+        <dt>10% raises (prosperity)</dt>
+        <dd>{gk.avgRaises.toFixed(1)} per run; {formatPercent(gk.runsWithRaise, 0)} of runs had one</dd>
+      </div>
+      <div>
+        <dt>Skipped inflation raises</dt>
+        <dd>{gk.avgSkippedInflation.toFixed(1)} per run</dd>
+      </div>
+    </dl>
+  {/if}
+
   <dl class="meta">
     {#if result.medianFailureYear !== null}
       <div>
@@ -57,8 +121,12 @@
       </div>
     {/if}
     <div>
+      <dt>Withdrawal strategy</dt>
+      <dd>{strategyLabel}</dd>
+    </div>
+    <div>
       <dt>First-year withdrawal</dt>
-      <dd>{formatCurrency(result.params.withdrawalRate * result.params.initialWealth)}</dd>
+      <dd>{formatCurrency(firstWithdrawal)}</dd>
     </div>
     <div>
       <dt>Seed</dt>
@@ -122,6 +190,16 @@
     font-size: 0.8rem;
     color: var(--muted);
     font-weight: 600;
+  }
+  .note {
+    margin: 0 0 8px;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+  .delta {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--muted);
   }
   .meta {
     display: grid;

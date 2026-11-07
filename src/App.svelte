@@ -67,8 +67,9 @@
   <header>
     <h1>Monte Carlo Retirement Simulator</h1>
     <p>
-      Each run draws normally distributed annual returns and withdraws an inflation-adjusted amount
-      at the start of each year. A run succeeds if the money lasts through every withdrawal.
+      Each run draws normally distributed annual returns and makes a withdrawal at the start of each
+      year, either a constant inflation-adjusted amount or one governed by Guyton-Klinger guardrails.
+      A run succeeds if the money lasts through every withdrawal.
     </p>
   </header>
 
@@ -102,6 +103,12 @@
       Notes: returns are nominal and drawn independently each year from a normal distribution,
       clamped at −100%. The mean is arithmetic; compound growth is roughly mean − σ²/2. Ending
       wealth counts failed runs as $0. Today's dollars divide by (1 + inflation)<sup>years</sup>.
+    </p>
+    <p>
+      Guardrails (Guyton-Klinger): the first withdrawal is 5.5% of initial wealth. Each later year it is
+      raised by inflation, unless the previous year's return was negative and the current withdrawal
+      rate is above 5.5%. If the current rate (withdrawal ÷ portfolio) then exceeds 6.6%, the withdrawal
+      is cut 10%, except in the final 15 years; if it falls below 4.4%, it is raised 10%.
     </p>
   </footer>
 </main>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { simulate } from '../src/lib/sim/simulate';
+import { GK, simulate } from '../src/lib/sim/simulate';
 import type { SimParams } from '../src/lib/sim/types';
 
 const base: SimParams = {
@@ -7,6 +7,7 @@ const base: SimParams = {
   meanReturn: 0,
   volatility: 0,
   inflation: 0,
+  withdrawalStrategy: 'constant',
   withdrawalRate: 0.04,
   years: 25,
   runs: 100,
@@ -49,6 +50,7 @@ describe('simulate (stochastic)', () => {
     meanReturn: 0.07,
     volatility: 0.15,
     inflation: 0.03,
+    withdrawalStrategy: 'constant',
     withdrawalRate: 0.04,
     years: 30,
     runs: 20_000,
@@ -82,5 +84,78 @@ describe('simulate (stochastic)', () => {
     let last = 0;
     simulate({ ...params, runs: 1000 }, (f) => (last = f));
     expect(last).toBe(1);
+  });
+});
+
+describe('simulate (guardrails, sigma = 0)', () => {
+  const gk: SimParams = { ...base, withdrawalStrategy: 'guardrails', withdrawalRate: GK.initialRate, runs: 10 };
+
+  it('constant strategy produces no guardrail stats', () => {
+    expect(simulate(base).guardrails).toBeNull();
+  });
+
+  it('raises 10% when the rate drops below the lower guardrail', () => {
+    // 10% returns, no inflation: the portfolio grows, so the rate (55k / wealth) keeps falling
+    // until it drops below 4.4%, triggering +10% raises.
+    const r = simulate({ ...gk, meanReturn: 0.1, years: 10 });
+    const g = r.guardrails!;
+    expect(r.successRate).toBe(1);
+    expect(g.avgCuts).toBe(0);
+    expect(g.avgRaises).toBeGreaterThan(0);
+    expect(g.runsWithRaise).toBe(1);
+    // Each raise is exactly 10%, so the final withdrawal is 55k * 1.1^raises.
+    expect(g.finalWithdrawal.median).toBeCloseTo(55_000 * Math.pow(1.1, g.avgRaises), 6);
+    expect(g.lowestWithdrawal.median).toBeCloseTo(55_000, 6);
+  });
+
+  it('cuts 10% above the upper guardrail, but not in the final 15 years', () => {
+    // -10% returns: year 2 rate = 55k / 850.5k = 6.47%; year 3 = 55k / 715.95k = 7.68% -> cut.
+    const r = simulate({ ...gk, meanReturn: -0.1, years: 40 });
+    const g = r.guardrails!;
+    expect(g.avgCuts).toBeGreaterThan(0);
+    expect(g.avgRaises).toBe(0);
+    expect(g.lowestWithdrawal.max).toBeLessThan(55_000);
+
+    // With only 16 years, cuts are allowed only in year 1 (no rules) -> none.
+    const short = simulate({ ...gk, meanReturn: -0.1, years: 16 });
+    expect(short.guardrails!.avgCuts).toBe(0);
+  });
+
+  it('skips the inflation raise after a losing year when the rate is above the initial rate', () => {
+    // -1% returns with 3% inflation: year-2 rate = 55k / 935.55k = 5.88% > 5.5% -> skip.
+    const r = simulate({ ...gk, meanReturn: -0.01, inflation: 0.03, years: 2 });
+    const g = r.guardrails!;
+    expect(g.avgSkippedInflation).toBe(1);
+    // Withdrawal stays at 55k nominal, so in today's dollars it is 55k / 1.03.
+    expect(g.finalWithdrawal.median).toBeCloseTo(55_000 / 1.03, 6);
+    expect(g.finalRate!.median).toBeCloseTo(55_000 / 935_550, 9);
+  });
+
+  it('applies inflation raises when returns are positive', () => {
+    const r = simulate({ ...gk, meanReturn: 0.03, inflation: 0.03, years: 2 });
+    const g = r.guardrails!;
+    expect(g.avgSkippedInflation).toBe(0);
+    expect(g.finalWithdrawal.median).toBeCloseTo(55_000, 6);
+  });
+});
+
+describe('simulate (guardrails, stochastic)', () => {
+  it('beats a constant 5.5% withdrawal on success rate', () => {
+    const p: SimParams = {
+      initialWealth: 1_000_000,
+      meanReturn: 0.07,
+      volatility: 0.15,
+      inflation: 0.03,
+      withdrawalStrategy: 'constant',
+      withdrawalRate: 0.055,
+      years: 30,
+      runs: 20_000,
+      seed: 2024,
+    };
+    const constant = simulate(p);
+    const gk = simulate({ ...p, withdrawalStrategy: 'guardrails' });
+    expect(gk.successRate).toBeGreaterThan(constant.successRate);
+    expect(gk.guardrails!.runsWithCut).toBeGreaterThan(0);
+    expect(gk.guardrails!.runsWithRaise).toBeGreaterThan(0);
   });
 });
