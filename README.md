@@ -2,8 +2,8 @@
 
 A single-page app (Vite + Svelte 5 + TypeScript) that estimates how likely a retirement portfolio is to last.
 
-Each run draws normally distributed annual returns and makes a withdrawal at the start of each year.
-Three withdrawal strategies are available:
+Each run draws annual returns and makes a withdrawal at the start of each year. Three withdrawal
+strategies are available:
 
 - **Standard**: 4% of initial wealth in year one, raised with inflation every year.
 - **Guardrails** (Guyton-Klinger): starts at 5.5%. Each year the withdrawal is raised with inflation,
@@ -14,10 +14,18 @@ Three withdrawal strategies are available:
   inflation raises happened.
 - **Custom**: your own first-year rate, raised with inflation every year.
 
-The headline output is the success
-rate: the share of runs that fund every withdrawal. The app also reports the mean, median, 25th and 10th
-percentiles, minimum and maximum of ending wealth, in nominal and today's dollars. The simulation runs
-in a Web Worker so large runs don't freeze the page.
+The headline output is the success rate: the share of runs that fund every withdrawal. The app also
+reports the mean, median, 25th and 10th percentiles, minimum and maximum of ending wealth, in nominal
+and today's dollars. The simulation runs in a Web Worker so large runs don't freeze the page.
+
+Every simulation runs twice with the same inputs and seed, and the results are shown side by side:
+
+- **Normal:** annual returns follow a normal distribution, clamped at −100%.
+- **Lognormal:** 1 + annual return follows a lognormal distribution.
+
+The mean return is the arithmetic mean and volatility is the standard deviation of annual returns in
+both models, so they differ only in distribution shape. The lognormal geometric mean is derived from
+those two inputs (7% arithmetic at 15% volatility is about 5.96% geometric).
 
 ```sh
 npm install

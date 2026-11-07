@@ -1,12 +1,19 @@
 <script lang="ts">
-  import type { SimResult, Summary } from '../sim/types';
+  import type { Comparison, ReturnModel, SimResult, Summary } from '../sim/types';
   import { formatCurrency, formatPercent } from '../format';
 
-  let { result }: { result: SimResult } = $props();
+  let { comparison }: { comparison: Comparison } = $props();
 
-  const band = $derived(
-    result.successRate >= 0.9 ? 'good' : result.successRate >= 0.75 ? 'warn' : 'bad',
-  );
+  const labels: Record<ReturnModel, string> = {
+    normal: 'Normal',
+    lognormal: 'Lognormal',
+  };
+
+  const columns = $derived([comparison.normal, comparison.lognormal]);
+  const params = $derived(comparison.normal.params);
+
+  const band = (r: SimResult) =>
+    r.successRate >= 0.9 ? 'good' : r.successRate >= 0.75 ? 'warn' : 'bad';
 
   const rows: { key: keyof Summary; label: string }[] = [
     { key: 'mean', label: 'Mean' },
@@ -17,109 +24,178 @@
     { key: 'max', label: 'Maximum' },
   ];
 
-  const failures = $derived(result.params.runs - result.successes);
-  const gk = $derived(result.guardrails);
-  const firstWithdrawal = $derived(result.params.withdrawalRate * result.params.initialWealth);
-  const strategyLabel = $derived(
-    result.params.withdrawalStrategy === 'guardrails'
-      ? `Guyton-Klinger guardrails, ${formatPercent(result.params.withdrawalRate)} start`
-      : `${formatPercent(result.params.withdrawalRate)} constant, inflation-adjusted`,
+  const sections: { key: 'nominal' | 'real'; label: string }[] = [
+    { key: 'nominal', label: 'Ending wealth, nominal' },
+    { key: 'real', label: "Ending wealth, today's dollars" },
+  ];
+
+  const difference = $derived(
+    (comparison.lognormal.successRate - comparison.normal.successRate) * 100,
   );
-  const vsFirst = (v: number) => formatPercent(v / firstWithdrawal - 1, 0).replace(/^(?!-)/, '+');
+  const elapsedMs = $derived(columns.reduce((sum, r) => sum + r.elapsedMs, 0));
+
+  const firstWithdrawal = $derived(params.withdrawalRate * params.initialWealth);
+  const strategyLabel = $derived(
+    params.withdrawalStrategy === 'guardrails'
+      ? `Guyton-Klinger guardrails, ${formatPercent(params.withdrawalRate)} start`
+      : `${formatPercent(params.withdrawalRate)} constant, inflation-adjusted`,
+  );
+  const showGuardrails = $derived(columns.every((r) => r.guardrails));
+  const gk = (r: SimResult) => r.guardrails!;
+  const vsFirst = (v: number) => {
+    const pct = Math.round((v / firstWithdrawal - 1) * 100);
+    return `${pct < 0 ? '−' : '+'}${Math.abs(pct)}%`;
+  };
+
+  const withdrawalSections: { key: 'finalWithdrawal' | 'lowestWithdrawal'; label: string }[] = [
+    { key: 'finalWithdrawal', label: 'Final-year withdrawal' },
+    { key: 'lowestWithdrawal', label: 'Lowest-year withdrawal' },
+  ];
 </script>
 
 <section class="results">
-  <div class="headline {band}">
-    <div class="rate">{formatPercent(result.successRate)}</div>
-    <div class="caption">
-      success rate: {result.successes.toLocaleString()} of {result.params.runs.toLocaleString()} runs
-      lasted {result.params.years} years
-    </div>
+  <div class="headlines">
+    {#each columns as r (r.model)}
+      <div class="headline {band(r)}">
+        <div class="model">{labels[r.model]}</div>
+        <div class="rate">{formatPercent(r.successRate)}</div>
+        <div class="caption">
+          success rate: {r.successes.toLocaleString()} of {params.runs.toLocaleString()} runs
+          lasted {params.years} years
+        </div>
+      </div>
+    {/each}
   </div>
+  <p class="difference">
+    Lognormal minus normal: {difference < 0 ? '−' : '+'}{Math.abs(difference).toFixed(1)} percentage points
+  </p>
 
-  <h2>Ending wealth</h2>
   <table>
     <thead>
       <tr>
         <th scope="col"></th>
-        <th scope="col">Nominal</th>
-        <th scope="col">Today's dollars</th>
+        <th scope="col">Normal</th>
+        <th scope="col">Lognormal</th>
       </tr>
     </thead>
     <tbody>
-      {#each rows as row (row.key)}
-        <tr>
-          <th scope="row">{row.label}</th>
-          <td>{formatCurrency(result.nominal[row.key])}</td>
-          <td>{formatCurrency(result.real[row.key])}</td>
-        </tr>
-      {/each}
+      <tr class="group"><th scope="colgroup" colspan="3">Annual return</th></tr>
+      <tr>
+        <th scope="row">Arithmetic mean</th>
+        {#each columns as r (r.model)}
+          <td>{formatPercent(r.arithmeticMean)}</td>
+        {/each}
+      </tr>
+      <tr>
+        <th scope="row">Geometric mean</th>
+        {#each columns as r (r.model)}
+          <td>{r.model === 'normal' ? '≈ ' : ''}{formatPercent(r.geometricMean)}</td>
+        {/each}
+      </tr>
+    </tbody>
+    {#each sections as section (section.key)}
+      <tbody>
+        <tr class="group"><th scope="colgroup" colspan="3">{section.label}</th></tr>
+        {#each rows as row (row.key)}
+          <tr>
+            <th scope="row">{row.label}</th>
+            {#each columns as r (r.model)}
+              <td>{formatCurrency(r[section.key][row.key])}</td>
+            {/each}
+          </tr>
+        {/each}
+      </tbody>
+    {/each}
+    <tbody>
+      <tr class="group"><th scope="colgroup" colspan="3">Failed runs</th></tr>
+      <tr>
+        <th scope="row">Count</th>
+        {#each columns as r (r.model)}
+          <td>{(params.runs - r.successes).toLocaleString()}</td>
+        {/each}
+      </tr>
+      <tr>
+        <th scope="row">Median depletion year</th>
+        {#each columns as r (r.model)}
+          <td>{r.medianFailureYear ?? '—'}</td>
+        {/each}
+      </tr>
     </tbody>
   </table>
 
-  {#if gk}
+  {#if showGuardrails}
     <h2>Withdrawals under the guardrails</h2>
     <p class="note">
-      Today's dollars, compared with the {formatCurrency(firstWithdrawal)} first-year withdrawal. Failed runs
-      count as $0.
+      Today's dollars, with the change from the {formatCurrency(firstWithdrawal)} first-year
+      withdrawal. Failed runs count as $0.
     </p>
     <table>
       <thead>
         <tr>
           <th scope="col"></th>
-          <th scope="col">Final year</th>
-          <th scope="col">Lowest year</th>
+          <th scope="col">Normal</th>
+          <th scope="col">Lognormal</th>
         </tr>
       </thead>
+      {#each withdrawalSections as section (section.key)}
+        <tbody>
+          <tr class="group"><th scope="colgroup" colspan="3">{section.label}</th></tr>
+          {#each rows as row (row.key)}
+            <tr>
+              <th scope="row">{row.label}</th>
+              {#each columns as r (r.model)}
+                <td>
+                  {formatCurrency(gk(r)[section.key][row.key])}
+                  <span class="delta">{vsFirst(gk(r)[section.key][row.key])}</span>
+                </td>
+              {/each}
+            </tr>
+          {/each}
+        </tbody>
+      {/each}
       <tbody>
-        {#each rows as row (row.key)}
-          <tr>
-            <th scope="row">{row.label}</th>
-            <td>
-              {formatCurrency(gk.finalWithdrawal[row.key])}
-              <span class="delta">{vsFirst(gk.finalWithdrawal[row.key])}</span>
-            </td>
-            <td>
-              {formatCurrency(gk.lowestWithdrawal[row.key])}
-              <span class="delta">{vsFirst(gk.lowestWithdrawal[row.key])}</span>
-            </td>
-          </tr>
-        {/each}
+        <tr class="group"><th scope="colgroup" colspan="3">Guardrail activity</th></tr>
+        <tr>
+          <th scope="row">Final-year withdrawal rate (median of successful runs)</th>
+          {#each columns as r (r.model)}
+            <td>{gk(r).finalRate ? formatPercent(gk(r).finalRate!.median) : '—'}</td>
+          {/each}
+        </tr>
+        <tr>
+          <th scope="row">10% cuts per run</th>
+          {#each columns as r (r.model)}
+            <td>{gk(r).avgCuts.toFixed(1)}</td>
+          {/each}
+        </tr>
+        <tr>
+          <th scope="row">Runs with a cut</th>
+          {#each columns as r (r.model)}
+            <td>{formatPercent(gk(r).runsWithCut, 0)}</td>
+          {/each}
+        </tr>
+        <tr>
+          <th scope="row">10% raises per run</th>
+          {#each columns as r (r.model)}
+            <td>{gk(r).avgRaises.toFixed(1)}</td>
+          {/each}
+        </tr>
+        <tr>
+          <th scope="row">Runs with a raise</th>
+          {#each columns as r (r.model)}
+            <td>{formatPercent(gk(r).runsWithRaise, 0)}</td>
+          {/each}
+        </tr>
+        <tr>
+          <th scope="row">Skipped inflation raises per run</th>
+          {#each columns as r (r.model)}
+            <td>{gk(r).avgSkippedInflation.toFixed(1)}</td>
+          {/each}
+        </tr>
       </tbody>
     </table>
-
-    <dl class="meta">
-      {#if gk.finalRate}
-        <div>
-          <dt>Final-year withdrawal rate (median of successful runs)</dt>
-          <dd>
-            {formatPercent(gk.finalRate.median)}
-            <span class="delta">range {formatPercent(gk.finalRate.min)} – {formatPercent(gk.finalRate.max)}</span>
-          </dd>
-        </div>
-      {/if}
-      <div>
-        <dt>10% cuts (capital preservation)</dt>
-        <dd>{gk.avgCuts.toFixed(1)} per run; {formatPercent(gk.runsWithCut, 0)} of runs had one</dd>
-      </div>
-      <div>
-        <dt>10% raises (prosperity)</dt>
-        <dd>{gk.avgRaises.toFixed(1)} per run; {formatPercent(gk.runsWithRaise, 0)} of runs had one</dd>
-      </div>
-      <div>
-        <dt>Skipped inflation raises</dt>
-        <dd>{gk.avgSkippedInflation.toFixed(1)} per run</dd>
-      </div>
-    </dl>
   {/if}
 
   <dl class="meta">
-    {#if result.medianFailureYear !== null}
-      <div>
-        <dt>Failed runs</dt>
-        <dd>{failures.toLocaleString()} (median depletion in year {result.medianFailureYear})</dd>
-      </div>
-    {/if}
     <div>
       <dt>Withdrawal strategy</dt>
       <dd>{strategyLabel}</dd>
@@ -130,16 +206,21 @@
     </div>
     <div>
       <dt>Seed</dt>
-      <dd>{result.params.seed}</dd>
+      <dd>{params.seed}</dd>
     </div>
     <div>
       <dt>Time</dt>
-      <dd>{result.elapsedMs.toFixed(0)} ms</dd>
+      <dd>{elapsedMs.toFixed(0)} ms</dd>
     </div>
   </dl>
 </section>
 
 <style>
+  .headlines {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+  }
   .headline {
     border-radius: 12px;
     padding: 20px;
@@ -155,8 +236,13 @@
   .bad {
     --band: var(--bad);
   }
+  .model {
+    font-size: 0.875rem;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
   .rate {
-    font-size: clamp(2.5rem, 8vw, 3.5rem);
+    font-size: clamp(2.25rem, 6vw, 3rem);
     font-weight: 700;
     line-height: 1;
     color: var(--band);
@@ -166,9 +252,10 @@
     margin-top: 6px;
     color: var(--muted);
   }
-  h2 {
-    font-size: 1rem;
-    margin: 24px 0 8px;
+  .difference {
+    margin: 12px 0 16px;
+    font-size: 0.875rem;
+    color: var(--muted);
   }
   table {
     width: 100%;
@@ -191,8 +278,18 @@
     color: var(--muted);
     font-weight: 600;
   }
+  .group th {
+    padding-top: 18px;
+    text-align: left;
+    font-size: 0.875rem;
+    font-weight: 700;
+  }
+  h2 {
+    font-size: 1rem;
+    margin: 28px 0 4px;
+  }
   .note {
-    margin: 0 0 8px;
+    margin: 0 0 4px;
     font-size: 0.8rem;
     color: var(--muted);
   }
