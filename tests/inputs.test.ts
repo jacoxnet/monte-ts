@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULTS, toParams, validate } from '../src/lib/inputs';
+import { DEFAULTS, MAX_RUNS, toParams, validate } from '../src/lib/inputs';
 
 describe('inputs', () => {
   it('defaults are valid', () => {
@@ -11,31 +11,32 @@ describe('inputs', () => {
     expect(Object.keys(e).sort()).toEqual(['initialWealth', 'runs', 'seed', 'volatilityPct', 'years']);
   });
 
+  it('requires a target success rate above 0 and up to 100', () => {
+    for (const bad of [null, 0, -5, 100.1]) {
+      expect(Object.keys(validate({ ...DEFAULTS, targetSuccessPct: bad }))).toEqual(['targetSuccessPct']);
+    }
+    for (const ok of [0.5, 99.5, 100]) {
+      expect(validate({ ...DEFAULTS, targetSuccessPct: ok })).toEqual({});
+    }
+  });
+
+  it('caps the number of runs', () => {
+    expect(validate({ ...DEFAULTS, runs: MAX_RUNS })).toEqual({});
+    expect(Object.keys(validate({ ...DEFAULTS, runs: MAX_RUNS + 1 }))).toEqual(['runs']);
+  });
+
   it('converts percents to decimals and keeps an explicit seed', () => {
     const p = toParams({ ...DEFAULTS, seed: 99 });
-    expect(p).toMatchObject({ meanReturn: 0.07, volatility: 0.15, inflation: 0.03, withdrawalRate: 0.04, seed: 99 });
-  });
-
-  it('maps withdrawal choices to strategy and rate', () => {
-    expect(toParams({ ...DEFAULTS, withdrawalChoice: 'standard', withdrawalRatePct: 7 })).toMatchObject({
-      withdrawalStrategy: 'constant',
-      withdrawalRate: 0.04,
+    expect(p).toEqual({
+      initialWealth: 1_000_000,
+      meanReturn: 0.07,
+      volatility: 0.15,
+      inflation: 0.03,
+      targetSuccess: 0.9,
+      years: 30,
+      runs: 10_000,
+      seed: 99,
     });
-    expect(toParams({ ...DEFAULTS, withdrawalChoice: 'guardrails' })).toMatchObject({
-      withdrawalStrategy: 'guardrails',
-      withdrawalRate: 0.055,
-    });
-    expect(toParams({ ...DEFAULTS, withdrawalChoice: 'custom', withdrawalRatePct: 4.5 })).toMatchObject({
-      withdrawalStrategy: 'constant',
-      withdrawalRate: 0.045,
-    });
-  });
-
-  it('only validates the custom rate when custom is chosen', () => {
-    expect(validate({ ...DEFAULTS, withdrawalChoice: 'standard', withdrawalRatePct: null })).toEqual({});
-    expect(Object.keys(validate({ ...DEFAULTS, withdrawalChoice: 'custom', withdrawalRatePct: null }))).toEqual([
-      'withdrawalRatePct',
-    ]);
   });
 
   it('picks a random seed when blank', () => {
