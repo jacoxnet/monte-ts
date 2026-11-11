@@ -1,31 +1,34 @@
 # Monte Carlo Retirement Simulator
 
-A single-page app (Vite + Svelte 5 + TypeScript) that estimates how likely a retirement portfolio is to last.
+A single-page app (Vite + Svelte 5 + TypeScript) that finds the largest first-year withdrawal, in
+dollars, that a retirement portfolio can support.
 
-Each run draws annual returns and makes a withdrawal at the start of each year. Three withdrawal
-strategies are available:
+You enter the initial wealth, mean annual return, volatility, inflation rate, target success rate,
+retirement years and number of simulation runs. Every invocation then searches for the maximum
+first-year withdrawal under two approaches and shows them side by side:
 
-- **Standard**: 4% of initial wealth in year one, raised with inflation every year.
-- **Guardrails** (Guyton-Klinger): starts at 5.5%. Each year the withdrawal is raised with inflation,
-  except after a losing year when the current rate is above 5.5%. If the current rate
-  (withdrawal ÷ portfolio) is more than 20% above 5.5%, the withdrawal is cut 10% (not in the final
-  15 years); if it is more than 20% below, it is raised 10%. Results also show the final-year and
-  lowest-year withdrawals, the final withdrawal rate, and how often cuts, raises and skipped
-  inflation raises happened.
-- **Custom**: your own first-year rate, raised with inflation every year.
+- **Standard**: the first-year withdrawal is raised with inflation every year. The search targets
+  the success rate you enter.
+- **Guardrails** (Guyton and Klinger, 2006): each year after the first, the withdrawal is raised
+  with inflation, except after a losing year when the current rate (withdrawal ÷ portfolio) is above
+  the initial rate. If the current rate is then more than 20% above the initial rate, the withdrawal
+  is cut 10% (not in the final 15 years); if it is more than 20% below, it is raised 10%. The search
+  always targets a 99% success rate, the paper's confidence standard.
 
-The headline output is the success rate: the share of runs that fund every withdrawal. The app also
-reports the mean, median, 25th and 10th percentiles, minimum and maximum of ending wealth, in nominal
-and today's dollars. The simulation runs in a Web Worker so large runs don't freeze the page.
+A run succeeds if it funds every withdrawal, taken at the start of each year. Annual returns follow
+a normal distribution, clamped at −100%; the mean is arithmetic and volatility is the standard
+deviation.
 
-Every simulation runs twice with the same inputs and seed, and the results are shown side by side:
+All returns are drawn once per invocation, so both strategies and every trial withdrawal face the
+same simulated markets. Each search bisects between $0 and the whole portfolio and keeps the largest
+withdrawal that meets its target, to within about $1 per $1 million of wealth.
 
-- **Normal:** annual returns follow a normal distribution, clamped at −100%.
-- **Lognormal:** 1 + annual return follows a lognormal distribution.
-
-The mean return is the arithmetic mean and volatility is the standard deviation of annual returns in
-both models, so they differ only in distribution shape. The lognormal geometric mean is derived from
-those two inputs (7% arithmetic at 15% volatility is about 5.96% geometric).
+For each approach the results show the maximum first-year withdrawal and its share of initial
+wealth, the target and simulated success rates, and the mean, median, 25th and 10th percentiles,
+minimum and maximum of the average annual withdrawal and of ending wealth. For the guardrails they
+also show the final-year and lowest-year withdrawals, the final withdrawal rate, and how often cuts,
+raises and skipped inflation raises happened. The search runs in a Web Worker so large runs don't
+freeze the page.
 
 ```sh
 npm install

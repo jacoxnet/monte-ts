@@ -67,10 +67,10 @@
   <header>
     <h1>Monte Carlo Retirement Simulator</h1>
     <p>
-      Compares normal and lognormal annual returns with the same arithmetic mean and volatility.
-      Each run makes a withdrawal at the start of each year, either a constant inflation-adjusted
-      amount or one governed by Guyton-Klinger guardrails, and succeeds if the money lasts through
-      every withdrawal.
+      Finds the largest first-year withdrawal a portfolio can support under two approaches: a
+      standard withdrawal raised with inflation every year, at the success rate you choose, and
+      Guyton-Klinger guardrails at a 99% success rate. Both are searched and simulated against the
+      same randomly drawn markets.
     </p>
   </header>
 
@@ -83,7 +83,7 @@
       {#if running}
         <div class="progress">
           <div class="bar"><div class="fill" style:width="{progress * 100}%"></div></div>
-          <span>Simulating… {Math.round(progress * 100)}%</span>
+          <span>Searching… {Math.round(progress * 100)}%</span>
         </div>
       {/if}
       {#if error}
@@ -101,17 +101,21 @@
 
   <footer>
     <p>
-      Notes: returns are nominal and drawn independently each year. The mean is arithmetic and
-      volatility is the standard deviation of annual returns in both models, which start from the
-      same seed. Normal returns are clamped at −100%, and their compound growth is roughly
-      mean − σ²/2. The lognormal geometric mean is derived from the mean and volatility. Ending
-      wealth counts failed runs as $0. Today's dollars divide by (1 + inflation)<sup>years</sup>.
+      Notes: returns are nominal, normally distributed, clamped at −100% and drawn independently
+      each year. The mean is arithmetic and volatility is the standard deviation of annual returns.
+      Withdrawals are taken at the start of each year, and a run succeeds if the money lasts through
+      every withdrawal. Each search tries different first-year withdrawals against the same set of
+      simulated markets and keeps the largest one that meets its target, to within about $1 per
+      $1 million of wealth. Ending wealth counts failed runs as $0. Today's dollars divide by
+      (1 + inflation)<sup>years</sup>.
     </p>
     <p>
-      Guardrails (Guyton-Klinger): the first withdrawal is 5.5% of initial wealth. Each later year it is
-      raised by inflation, unless the previous year's return was negative and the current withdrawal
-      rate is above 5.5%. If the current rate (withdrawal ÷ portfolio) then exceeds 6.6%, the withdrawal
-      is cut 10%, except in the final 15 years; if it falls below 4.4%, it is raised 10%.
+      Guardrails (Guyton and Klinger, 2006): each year after the first, the withdrawal is raised by
+      inflation, unless the previous year's return was negative and the current withdrawal rate
+      (withdrawal ÷ portfolio) is above the initial rate. If the current rate is then more than 20%
+      above the initial rate, the withdrawal is cut 10%, except in the final 15 years; if it is more
+      than 20% below, the withdrawal is raised 10%. The paper's portfolio management rule does not
+      apply, because the portfolio here is a single asset.
     </p>
   </footer>
 </main>
